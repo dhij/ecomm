@@ -51,3 +51,39 @@ func (s *Server) ListOrders(ctx context.Context) ([]storer.Order, error) {
 func (s *Server) DeleteOrder(ctx context.Context, id int64) error {
 	return s.storer.DeleteOrder(ctx, id)
 }
+
+func (s *Server) CreateUser(ctx context.Context, u *storer.User) (*storer.User, error) {
+	return s.storer.CreateUser(ctx, u)
+}
+
+func (s *Server) GetUser(ctx context.Context, email string) (*storer.User, error) {
+	return s.storer.GetUser(ctx, email)
+}
+
+func (s *Server) ListUsers(ctx context.Context) ([]storer.User, error) {
+	return s.storer.ListUsers(ctx)
+}
+
+func (s *Server) UpdateUser(ctx context.Context, u *storer.User) (*storer.User, error) {
+	return s.storer.UpdateUser(ctx, u)
+}
+
+func (s *Server) DeleteUser(ctx context.Context, id int64) error {
+	return s.storer.DeleteUser(ctx, id)
+}
+
+func (s *Server) CreateSession(ctx context.Context, se *storer.Session) (*storer.Session, error) {
+	return s.storer.CreateSession(ctx, se)
+}
+
+func (s *Server) GetSession(ctx context.Context, id string) (*storer.Session, error) {
+	return s.storer.GetSession(ctx, id)
+}
+
+func (s *Server) RevokeSession(ctx context.Context, id string) error {
+	return s.storer.RevokeSession(ctx, id)
+}
+
+func (s *Server) DeleteSession(ctx context.Context, id string) error {
+	return s.storer.DeleteSession(ctx, id)
+}
