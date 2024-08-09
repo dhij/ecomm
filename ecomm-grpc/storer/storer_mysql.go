@@ -42,8 +42,8 @@ func (ms *MySQLStorer) GetProduct(ctx context.Context, id int64) (*Product, erro
 	return &p, nil
 }
 
-func (ms *MySQLStorer) ListProducts(ctx context.Context) ([]Product, error) {
-	var products []Product
+func (ms *MySQLStorer) ListProducts(ctx context.Context) ([]*Product, error) {
+	var products []*Product
 	err := ms.db.SelectContext(ctx, &products, "SELECT * FROM products")
 	if err != nil {
 		return nil, fmt.Errorf("error listing products: %w", err)
@@ -142,8 +142,8 @@ func (ms *MySQLStorer) GetOrder(ctx context.Context, userID int64) (*Order, erro
 	return &o, nil
 }
 
-func (ms *MySQLStorer) ListOrders(ctx context.Context) ([]Order, error) {
-	var orders []Order
+func (ms *MySQLStorer) ListOrders(ctx context.Context) ([]*Order, error) {
+	var orders []*Order
 	err := ms.db.SelectContext(ctx, &orders, "SELECT * FROM orders")
 	if err != nil {
 		return nil, fmt.Errorf("error listing orders: %w", err)
@@ -230,8 +230,8 @@ func (ms *MySQLStorer) GetUser(ctx context.Context, email string) (*User, error)
 	return &u, nil
 }
 
-func (ms *MySQLStorer) ListUsers(ctx context.Context) ([]User, error) {
-	var users []User
+func (ms *MySQLStorer) ListUsers(ctx context.Context) ([]*User, error) {
+	var users []*User
 	err := ms.db.SelectContext(ctx, &users, "SELECT * FROM users")
 	if err != nil {
 		return nil, fmt.Errorf("error listing users: %w", err)
