@@ -33,6 +33,7 @@ func RegisterRoutes(handler *handler) *chi.Mux {
 		r.Route("/orders", func(r chi.Router) {
 			r.Post("/", handler.createOrder)
 			r.With(GetAdminMiddlewareFunc(tokenMaker)).Get("/", handler.listOrders)
+			r.With(GetAdminMiddlewareFunc(tokenMaker)).Patch("/status", handler.updateOrderStatus)
 
 			r.Route("/{id}", func(r chi.Router) {
 				r.Delete("/", handler.deleteOrder)
