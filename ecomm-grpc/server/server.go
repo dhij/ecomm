@@ -2,6 +2,9 @@ package server
 
 import (
 	"context"
+	"fmt"
+	"strings"
+	"time"
 
 	"github.com/dhij/ecomm/ecomm-grpc/pb"
 	"github.com/dhij/ecomm/ecomm-grpc/storer"
@@ -82,6 +85,17 @@ func (s *Server) CreateOrder(ctx context.Context, o *pb.OrderReq) (*pb.OrderRes,
 	if err != nil {
 		return nil, err
 	}
+	order.Status = storer.Pending
+
+	_, err = s.storer.EnqueueNotificationEvent(ctx, &storer.NotificationEvent{
+		UserEmail:   o.GetUserEmail(),
+		OrderStatus: order.Status,
+		OrderID:     order.ID,
+		Attempts:    0,
+	})
+	if err != nil {
+		return nil, err
+	}
 
 	return toPBOrderRes(order), nil
 }
@@ -109,6 +123,43 @@ func (s *Server) ListOrders(ctx context.Context, o *pb.OrderReq) (*pb.ListOrderR
 	return &pb.ListOrderRes{
 		Orders: lor,
 	}, nil
+}
+
+func (s *Server) UpdateOrderStatus(ctx context.Context, o *pb.OrderReq) (*pb.OrderRes, error) {
+	// vadliate the order req
+	order, err := s.storer.GetOrderStatusByID(ctx, o.GetId())
+	if err != nil {
+		return nil, err
+	}
+
+	if o.GetUserId() != order.UserID {
+		return nil, fmt.Errorf("order %d does not belong to user %d", o.GetId(), o.GetUserId())
+	}
+
+	sOrderStatus := storer.OrderStatus(strings.ToLower(o.GetStatus().String()))
+	if sOrderStatus == order.Status {
+		return nil, fmt.Errorf("order status is already %s", order.Status)
+	}
+
+	order.Status = sOrderStatus
+	order.UpdatedAt = toTimePtr(time.Now())
+	or, err := s.storer.UpdateOrderStatus(ctx, order)
+	if err != nil {
+		return nil, err
+	}
+
+	// enqueue notification event
+	_, err = s.storer.EnqueueNotificationEvent(ctx, &storer.NotificationEvent{
+		UserEmail:   o.GetUserEmail(),
+		OrderStatus: order.Status,
+		OrderID:     order.ID,
+		Attempts:    0,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return toPBOrderRes(or), nil
 }
 
 func (s *Server) DeleteOrder(ctx context.Context, o *pb.OrderReq) (*pb.OrderRes, error) {
@@ -230,4 +281,56 @@ func (s *Server) DeleteSession(ctx context.Context, sr *pb.SessionReq) (*pb.Sess
 	}
 
 	return &pb.SessionRes{}, nil
+}
+
+func (s *Server) ListNotificationEvents(ctx context.Context, lnr *pb.ListNotificationEventsReq) (*pb.ListNotificationEventsRes, error) {
+	notificationEvents, err := s.storer.ListNotificationEvents(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	lners := make([]*pb.NotificationEvent, 0, len(notificationEvents))
+	for _, ne := range notificationEvents {
+		lners = append(lners, &pb.NotificationEvent{
+			Id:          ne.ID,
+			UserEmail:   ne.UserEmail,
+			OrderStatus: toPBOrderStatus(ne.OrderStatus),
+			OrderId:     ne.OrderID,
+			StateId:     ne.StateID,
+			Attempts:    ne.Attempts,
+		})
+	}
+
+	return &pb.ListNotificationEventsRes{
+		Events: lners,
+	}, nil
+}
+
+func (s *Server) UpdateNotificationEvent(ctx context.Context, unr *pb.UpdateNotificationEventReq) (*pb.UpdateNotificationEventRes, error) {
+	var responseType storer.NotificationResponseType
+	switch unr.ResponseType {
+	case pb.NotificationResponseType_SUCCESS:
+		responseType = storer.NotificationSucess
+	case pb.NotificationResponseType_FAILURE:
+		responseType = storer.NotificationFailure
+	default:
+		return nil, fmt.Errorf("invalid response type %s", unr.ResponseType)
+	}
+
+	succeeded, err := s.storer.UpdateNotificationEvent(ctx,
+		&storer.NotificationEvent{
+			ID:      unr.GetId(),
+			StateID: unr.GetStateId(),
+		},
+		&storer.NotificationState{
+			Message: unr.GetMessage(),
+		},
+		responseType)
+	if err != nil {
+		return nil, err
+	}
+
+	return &pb.UpdateNotificationEventRes{
+		Succeeded: succeeded,
+	}, nil
 }

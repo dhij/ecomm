@@ -3,8 +3,13 @@ package storer
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/jmoiron/sqlx"
+)
+
+const (
+	maxAttempts = 3
 )
 
 type MySQLStorer struct {
@@ -142,6 +147,16 @@ func (ms *MySQLStorer) GetOrder(ctx context.Context, userID int64) (*Order, erro
 	return &o, nil
 }
 
+func (ms *MySQLStorer) GetOrderStatusByID(ctx context.Context, id int64) (*Order, error) {
+	var o Order
+	err := ms.db.GetContext(ctx, &o, "SELECT id, user_id, status FROM orders WHERE id=?", id)
+	if err != nil {
+		return nil, fmt.Errorf("error getting order: %w", err)
+	}
+
+	return &o, nil
+}
+
 func (ms *MySQLStorer) ListOrders(ctx context.Context) ([]*Order, error) {
 	var orders []*Order
 	err := ms.db.SelectContext(ctx, &orders, "SELECT * FROM orders")
@@ -161,7 +176,14 @@ func (ms *MySQLStorer) ListOrders(ctx context.Context) ([]*Order, error) {
 	return orders, nil
 }
 
-// UpdateOrderStatus
+func (ms *MySQLStorer) UpdateOrderStatus(ctx context.Context, o *Order) (*Order, error) {
+	_, err := ms.db.NamedExecContext(ctx, "UPDATE orders SET status=:status, updated_at=:updated_at WHERE id=:id", o)
+	if err != nil {
+		return nil, fmt.Errorf("error updating order status: %w", err)
+	}
+
+	return o, nil
+}
 
 func (ms *MySQLStorer) DeleteOrder(ctx context.Context, id int64) error {
 	err := ms.execTx(ctx, func(tx *sqlx.Tx) error {
@@ -293,4 +315,177 @@ func (ms *MySQLStorer) DeleteSession(ctx context.Context, id string) error {
 	}
 
 	return nil
+}
+
+func insertNotificationState(ctx context.Context, tx *sqlx.Tx, es *NotificationState) (*NotificationState, error) {
+	res, err := tx.NamedExecContext(ctx, "INSERT INTO notification_states (order_id, state, message) VALUES (:order_id, :state, :message)", es)
+	if err != nil {
+		return nil, fmt.Errorf("error inserting notification state: %w", err)
+	}
+
+	id, err := res.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("error getting last insert ID: %w", err)
+	}
+	es.ID = id
+
+	return es, nil
+}
+
+func insertNotificationEvent(ctx context.Context, tx *sqlx.Tx, u *NotificationEvent) (*NotificationEvent, error) {
+	res, err := tx.NamedExecContext(ctx, "INSERT INTO notification_events_queue (user_email, order_status, order_id, state_id, attempts) VALUES (:user_email, :order_status, :order_id, :state_id, :attempts)", u)
+	if err != nil {
+		return nil, fmt.Errorf("error inserting notification event: %w", err)
+	}
+
+	id, err := res.LastInsertId()
+	if err != nil {
+		return nil, fmt.Errorf("error getting last insert ID: %w", err)
+	}
+	u.ID = id
+
+	return u, nil
+}
+
+func (ms *MySQLStorer) EnqueueNotificationEvent(ctx context.Context, ne *NotificationEvent) (*NotificationEvent, error) {
+	var ev *NotificationEvent
+	err := ms.execTx(ctx, func(tx *sqlx.Tx) error {
+		ns, err := insertNotificationState(ctx, tx, &NotificationState{
+			OrderID: ne.OrderID,
+			State:   NotSent,
+			Message: "",
+		})
+		if err != nil {
+			return fmt.Errorf("error inserting notification state: %w", err)
+		}
+		ne.StateID = ns.ID
+
+		ev, err = insertNotificationEvent(ctx, tx, ne)
+		if err != nil {
+			return fmt.Errorf("error inserting notification event: %w", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("error enqueuing notification event: %w", err)
+	}
+
+	return ev, nil
+}
+
+func (ms *MySQLStorer) ListNotificationEvents(ctx context.Context) ([]*NotificationEvent, error) {
+	var events []*NotificationEvent
+
+	q := fmt.Sprintf("SELECT * FROM notification_events_queue WHERE attempts < %d ORDER BY created_at", maxAttempts)
+	err := ms.db.SelectContext(ctx, &events, q)
+	if err != nil {
+		return nil, fmt.Errorf("error listing notification events: %w", err)
+	}
+
+	return events, nil
+}
+
+func getNotificationEventAttempts(ctx context.Context, tx *sqlx.Tx, id int64) (*NotificationEvent, error) {
+	var u NotificationEvent
+	err := tx.GetContext(ctx, &u, "SELECT id, attempts FROM notification_events_queue WHERE id=?", id)
+	if err != nil {
+		return nil, fmt.Errorf("error getting notification event: %w", err)
+	}
+
+	return &u, nil
+}
+
+func updateNotificationEventAttempts(ctx context.Context, tx *sqlx.Tx, u *NotificationEvent) (*NotificationEvent, error) {
+	_, err := tx.NamedExecContext(ctx, "UPDATE notification_events_queue SET attempts=:attempts, updated_at=:updated_at WHERE id=:id", u)
+	if err != nil {
+		return nil, fmt.Errorf("error updating notification event: %w", err)
+	}
+
+	return u, nil
+}
+
+func deleteNotificationEvent(ctx context.Context, tx *sqlx.Tx, id int64) error {
+	_, err := tx.ExecContext(ctx, "DELETE FROM notification_events_queue WHERE id=?", id)
+	if err != nil {
+		return fmt.Errorf("error deleting notification event: %w", err)
+	}
+
+	return nil
+}
+
+func updateNotificationState(ctx context.Context, tx *sqlx.Tx, es *NotificationState) error {
+	q := "UPDATE notification_states SET state=:state, message=:message WHERE id=:id"
+	if es.State == Sent {
+		t := time.Now()
+		es.CompletedAt = &t
+		q = "UPDATE notification_states SET state=:state, message=:message, completed_at=:completed_at WHERE id=:id"
+	}
+
+	_, err := tx.NamedExecContext(ctx, q, es)
+	if err != nil {
+		return fmt.Errorf("error updating notification state: %w", err)
+	}
+
+	return nil
+}
+
+func (ms *MySQLStorer) UpdateNotificationEvent(ctx context.Context, ev *NotificationEvent, es *NotificationState, responseType NotificationResponseType) (bool, error) {
+	succeeded := false
+	err := ms.execTx(ctx, func(tx *sqlx.Tx) error {
+		switch responseType {
+		case NotificationSucess:
+			err := updateNotificationState(ctx, tx, &NotificationState{
+				ID:      ev.StateID,
+				State:   Sent,
+				Message: es.Message,
+			})
+			if err != nil {
+				return fmt.Errorf("error updating notification state: %w", err)
+			}
+
+			err = deleteNotificationEvent(ctx, tx, ev.ID)
+			if err != nil {
+				return fmt.Errorf("error deleting notification event: %w", err)
+			}
+			succeeded = true
+		case NotificationFailure:
+			u, err := getNotificationEventAttempts(ctx, tx, ev.ID)
+			if err != nil {
+				return fmt.Errorf("error getting notification event: %w", err)
+			}
+
+			if u.Attempts+1 < maxAttempts {
+				t := time.Now()
+				u.UpdatedAt = &t
+				u.Attempts += 1
+
+				_, err = updateNotificationEventAttempts(ctx, tx, u)
+				if err != nil {
+					return fmt.Errorf("error updating notification event: %w", err)
+				}
+			} else {
+				err = updateNotificationState(ctx, tx, &NotificationState{
+					ID:      ev.StateID,
+					State:   Failed,
+					Message: es.Message,
+				})
+				if err != nil {
+					return fmt.Errorf("error updating notification state: %w", err)
+				}
+
+				err = deleteNotificationEvent(ctx, tx, u.ID)
+				if err != nil {
+					return fmt.Errorf("error deleting notification event: %w", err)
+				}
+			}
+
+		default:
+			return fmt.Errorf("invalid notification response type: %v", responseType)
+		}
+
+		return nil
+	})
+
+	return succeeded, err
 }

@@ -138,6 +138,7 @@ func (h *handler) createOrder(w http.ResponseWriter, r *http.Request) {
 	claims := r.Context().Value(authKey{}).(*token.UserClaims)
 	po := toPBOrderReq(o)
 	po.UserId = claims.ID
+	po.UserEmail = claims.Email
 
 	created, err := h.client.CreateOrder(h.ctx, po)
 	if err != nil {
@@ -177,6 +178,36 @@ func (h *handler) listOrders(w http.ResponseWriter, r *http.Request) {
 	var res []OrderRes
 	for _, o := range orders.Orders {
 		res = append(res, toOrderRes(o))
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(res)
+}
+
+func (h *handler) updateOrderStatus(w http.ResponseWriter, r *http.Request) {
+	claims := r.Context().Value(authKey{}).(*token.UserClaims)
+
+	var o OrderReq
+	if err := json.NewDecoder(r.Body).Decode(&o); err != nil {
+		http.Error(w, "error decoding request body", http.StatusBadRequest)
+		return
+	}
+
+	status, err := toPBOrderStatus(OrderStatus(o.Status))
+	if err != nil {
+		http.Error(w, "invalid status", http.StatusBadRequest)
+		return
+	}
+
+	res, err := h.client.UpdateOrderStatus(h.ctx, &pb.OrderReq{
+		Id:        o.ID,
+		UserId:    claims.ID,
+		UserEmail: claims.Email,
+		Status:    status,
+	})
+	if err != nil {
+		http.Error(w, "failed to update order status", http.StatusInternalServerError)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")

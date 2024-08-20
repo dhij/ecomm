@@ -44,6 +44,12 @@ message OrderItem {
     int64 product_id = 5;
 }
 
+enum OrderStatus {
+    PENDING = 0;
+    SHIPPED = 1;
+    DELIVERED = 2;
+}
+
 message OrderReq {
     int64 id = 1;
     repeated OrderItem items = 2;
@@ -52,6 +58,8 @@ message OrderReq {
     float shipping_price = 5;
     float total_price = 6;
     int64 user_id = 7;
+    string user_email = 8;
+    OrderStatus status = 9;
 }
 
 message OrderRes {
@@ -64,6 +72,7 @@ message OrderRes {
     int64 user_id = 7;
     google.protobuf.Timestamp created_at = 8;
     google.protobuf.Timestamp updated_at = 9;
+    OrderStatus status = 10;
 }
 
 message ListOrderRes {
@@ -107,6 +116,38 @@ message SessionRes {
     google.protobuf.Timestamp expires_at = 5;
 }
 
+message NotificationEvent {
+    int64 id = 1;
+    string user_email = 2;
+    OrderStatus order_status = 3;
+    int64 order_id = 4;
+    int64 state_id = 5;
+    int64 attempts = 6;
+}
+
+message ListNotificationEventsReq {}
+
+message ListNotificationEventsRes {
+    repeated NotificationEvent events = 1;
+}
+
+enum NotificationResponseType {
+    SUCCESS = 0;
+    FAILURE = 1;
+}
+
+message UpdateNotificationEventReq {
+    int64 id = 1;
+    int64 state_id = 2;
+    int64 order_id = 3;
+    NotificationResponseType response_type = 4;
+    string message = 5;
+}
+
+message UpdateNotificationEventRes {
+    bool succeeded = 1;
+}
+
 service ecomm {
     rpc CreateProduct(ProductReq) returns (ProductRes) {}
     rpc GetProduct(ProductReq) returns (ProductRes) {}
@@ -117,6 +158,7 @@ service ecomm {
     rpc CreateOrder(OrderReq) returns (OrderRes) {}
     rpc GetOrder(OrderReq) returns (OrderRes) {}
     rpc ListOrders(OrderReq) returns (ListOrderRes) {}
+    rpc UpdateOrderStatus(OrderReq) returns (OrderRes) {}
     rpc DeleteOrder(OrderReq) returns (OrderRes) {}
 
     rpc CreateUser(UserReq) returns (UserRes) {}
@@ -129,4 +171,7 @@ service ecomm {
     rpc GetSession(SessionReq) returns (SessionRes) {}
     rpc RevokeSession(SessionReq) returns (SessionRes) {}
     rpc DeleteSession(SessionReq) returns (SessionRes) {}
+
+    rpc ListNotificationEvents(ListNotificationEventsReq) returns (ListNotificationEventsRes) {}
+    rpc UpdateNotificationEvent(UpdateNotificationEventReq) returns (UpdateNotificationEventRes) {}
 }
