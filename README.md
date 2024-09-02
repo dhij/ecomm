@@ -13,7 +13,7 @@ This repo is a WIP and consists of a series of tutorials available on Youtube:
 - [x] [Ep6 Admin & Authorization Middlewares](https://youtu.be/ygwF2gtjv18)
 - [x] [Ep7 Protobuf, gRPC Client & Server Setup](https://youtu.be/D1a7ny_imUw)
 - [x] [Ep8 Enqueue Notifications into a Stateful Database Queue](https://youtu.be/2wiLDfktPzA)
-- [ ] Ep9 Send Email Notifications in Goroutines with Errgroup and Semaphores - TBD
+- [x] [Ep9 Send Email Notifications in Goroutines](https://www.youtube.com/watch?v=_Qe3YiZMd7Y)
 - [ ] Ep10 Golang Microservice Local Development Setup - TBD
 - [ ] Ep11 Kubernetes Basics - TBD
 
