@@ -16,6 +16,7 @@ func main() {
 	var (
 		svcAddr = envflag.String("SVC_ADDR", "0.0.0.0:9091", "address where the ecomm-grpc service is listening on")
 	)
+	envflag.Parse()
 
 	// instantiate db
 	db, err := db.NewDatabase()
