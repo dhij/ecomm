@@ -1,0 +1,53 @@
+networks:
+  ecomm:
+    driver: bridge
+services:
+  mysql:
+    networks:
+      - ecomm
+    platform: linux/amd64
+    image: mysql:8.4
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: password
+      MYSQL_DATABASE: ecomm
+  ecomm-grpc:
+    networks:
+      - ecomm
+    hostname: ecomm-grpc
+    platform: linux/amd64
+    image: dhij.test/ecomm:latest
+    command: "/bin/ecomm-grpc"
+    ports:
+      - "9091:9091"
+    environment:
+      DB_ADDR: "mysql:3306"
+    depends_on:
+      - mysql
+  ecomm-api:
+    networks:
+      - ecomm
+    hostname: ecomm-api
+    platform: linux/amd64
+    image: dhij.test/ecomm:latest
+    command: "/bin/ecomm-api"
+    ports:
+      - "8080:8080"
+    environment:
+      GRPC_SVC_ADDR: "ecomm-grpc:9091"
+    depends_on:
+      - ecomm-grpc
+  ecomm-notification:
+    networks:
+      - ecomm
+    hostname: ecomm-notification
+    platform: linux/amd64
+    image: dhij.test/ecomm:latest
+    command: "/bin/ecomm-notification"
+    environment:
+      ADMIN_EMAIL: ""
+      ADMIN_PASSWORD: ""
+      GRPC_SVC_ADDR: "ecomm-grpc:9091"
+    depends_on:
+      - ecomm-grpc

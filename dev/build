@@ -1,0 +1,18 @@
+#!/bin/bash
+
+mkdir -p dev/dist
+buildpids=""
+
+for f in ecomm-api ecomm-grpc ecomm-notification; do
+    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o "dev/dist/$f" "./cmd/$f" &
+    buildpids+=" $!"
+done
+
+for pid in $buildpids; do
+    echo "process id: $pid"
+    wait "$pid"
+done
+
+image="dhij.test/ecomm:latest"
+docker build -t "$image" -f Dockerfile.dev .
+echo "=> dev image built" > /dev/stderr
